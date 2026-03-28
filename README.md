@@ -1,25 +1,25 @@
-# Geotag 🛰️
+# SentinelLabel 🛰️
 
 > **From satellite imagery to labeled datasets in minutes—not hours.**
 
-Geotag is a standalone, high-performance geospatial labeling application designed for machine learning teams who need quality training data fast. Stream Sentinel-2 imagery directly from the cloud, automatically segment it into intelligent superpixels, and rapidly classify land cover—all through an intuitive visual interface.
+SentinelLabel is a standalone, high-performance geospatial labeling application designed for machine learning teams who need quality training data fast. Stream Sentinel-2 imagery directly from the cloud, automatically segment it into intelligent superpixels, and rapidly classify land cover—all through an intuitive visual interface.
 
 ---
 
 ## ✨ The Experience
 
-### Why Geotag Exists
+### Why SentinelLabel Exists
 
 Creating labeled geospatial datasets traditionally requires:
 - Downloading massive GeoTIFF files (hours)
 - Manual polygon drawing in desktop GIS software (days)
 - Export management and format conversion (frustration)
 
-**Geotag compresses this into minutes.** Draw your area. Stream the imagery. Click to segment. Label with hotkeys. Export to GeoPackage. Done.
+**SentinelLabel compresses this into minutes.** Draw your area. Stream the imagery. Click to segment. Label with hotkeys. Export to GeoPackage. Done.
 
 ---
 
-## ⚠️ The Labeling Problem (What Geotag Solves)
+## ⚠️ The Labeling Problem (What SentinelLabel Solves)
 
 ### Current Industry Pain Points
 
@@ -55,7 +55,7 @@ A single 10km² AOI at 10m resolution contains **100,000 pixels**. Traditional w
 - Review for consistency: 2-4 hours  
 - Export and format convert: 1 hour
 
-**Geotag's solution**: Automated superpixel segmentation pre-cuts the image into 500-5,000 semantically-meaningful regions. Humans classify, computers draw. Time: 10-30 minutes for the same AOI.
+**SentinelLabel's solution**: Automated superpixel segmentation pre-cuts the image into 500-5,000 semantically-meaningful regions. Humans classify, computers draw. Time: 10-30 minutes for the same AOI.
 
 ---
 
@@ -67,15 +67,15 @@ A single 10km² AOI at 10m resolution contains **100,000 pixels**. Traditional w
 Open your terminal, activate the environment, start the server:
 
 ```bash
-conda activate geotag
-python -m uvicorn geotag_app:app --reload --host 0.0.0.0 --port 8000
+conda activate sentinellabel
+python -m uvicorn sentinellabel_app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Navigate to `http://localhost:8000`. The dark-themed interface loads instantly—no build step, no configuration files.
 
 **You'll see:**
 - A full-screen interactive map (Leaflet-powered)
-- A sleek sidebar with the Geotag brand
+- A sleek sidebar with the SentinelLabel brand
 - Progress indicators showing 3 steps: **Stream → Segment → Label**
 
 ---
@@ -98,7 +98,7 @@ Click the **rectangle tool** (top-left of the map). Draw a bounding box anywhere
 Click the **"Stream Imagery"** button. 
 
 **Behind the scenes:**
-1. Geotag queries the [Earth Search STAC API](https://earth-search.aws.element84.com/v1) for Sentinel-2 imagery
+1. SentinelLabel queries the [Earth Search STAC API](https://earth-search.aws.element84.com/v1) for Sentinel-2 imagery
 2. It finds the clearest, most recent mosaic for your AOI (filtering by cloud cover)
 3. Streams 10 spectral bands directly from AWS S3 into memory—no local disk usage
 4. Warps the imagery to Web Mercator for display
@@ -278,7 +278,7 @@ We deliberately select a **4-band weighted stack** for Felzenszwalb segmentation
 
 ### Core Philosophy
 
-Geotag is built on **cloud-native, battle-tested open source**—no proprietary formats, no vendor lock-in, no build steps.
+SentinelLabel is built on **cloud-native, battle-tested open source**—no proprietary formats, no vendor lock-in, no build steps.
 
 | Layer | Technology | Why We Chose It |
 |-------|------------|-----------------|
@@ -329,18 +329,18 @@ Geotag is built on **cloud-native, battle-tested open source**—no proprietary 
 
 ```bash
 # Clone the repository
-git clone https://github.com/mo-labs/geotag.git
-cd geotag
+git clone https://github.com/mo-labs/sentinellabel.git
+cd sentinellabel
 
 # Create conda environment with geospatial stack
 conda env create -f environment.yml
-conda activate geotag
+conda activate sentinellabel
 
-# Install geotag in editable mode
+# Install sentinellabel in editable mode
 pip install -e .
 
 # Start the server
-python -m uvicorn geotag_app:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn sentinellabel_app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Access:** Open `http://localhost:8000` in your browser.
@@ -422,7 +422,7 @@ Export labeled polygons to GeoPackage.
 ```json
 {
   "status": "success",
-  "path": "/home/user/geotag/exports/riyadh_trees/labels/riyadh_trees_labels_20250127_1430.gpkg",
+  "path": "/home/user/sentinellabel/exports/riyadh_trees/labels/riyadh_trees_labels_20250127_1430.gpkg",
   "assigned_polygons": 2
 }
 ```
@@ -474,8 +474,8 @@ Higher values = more polygons = longer processing time.
 ### Project Structure
 
 ```
-geotag/
-├── geotag_app.py          # FastAPI backend (453 lines)
+sentinellabel/
+├── sentinellabel_app.py          # FastAPI backend (453 lines)
 ├── index.html             # React frontend (1082 lines, self-contained)
 ├── pyproject.toml         # Package configuration
 ├── environment.yml        # Conda dependencies
@@ -483,7 +483,7 @@ geotag/
 └── README.md              # This file
 ```
 
-### Backend (`geotag_app.py`)
+### Backend (`sentinellabel_app.py`)
 
 **Key Dependencies:**
 - `fastapi` + `uvicorn`: HTTP server

@@ -1,19 +1,19 @@
-# Geotag Conda Environment
+# SentinelLabel Conda Environment
 # ------------------------
 # A standalone geospatial labeling environment for ML teams
 #
 # Quick start:
 #   conda env create -f environment.yml
-#   conda activate geotag
+#   conda activate sentinellabel
 #   pip install -e .
 #
 # To update:
 #   conda env update -f environment.yml --prune
 #
 # To remove:
-#   conda remove --name geotag --all -y
+#   conda remove --name sentinellabel --all -y
 
-name: geotag
+name: sentinellabel
 channels:
   - conda-forge
   - pytorch

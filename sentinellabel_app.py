@@ -43,7 +43,7 @@ os.environ["AWS_REGION"] = "us-west-2"
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sentinellabel")
 
 # Quiet boto3/rasterio logs
 logging.getLogger("rasterio").setLevel(logging.WARNING)
