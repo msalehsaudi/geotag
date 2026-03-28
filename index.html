@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treelance — Geospatial Labeler</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #08090d;
+            --surface-1: rgba(14, 16, 22, 0.92);
+            --surface-2: rgba(22, 25, 36, 0.85);
+            --surface-3: rgba(30, 34, 48, 0.7);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-active: rgba(99, 179, 237, 0.5);
+            --accent: #63b3ed;
+            --accent-glow: rgba(99, 179, 237, 0.2);
+            --accent-dim: rgba(99, 179, 237, 0.6);
+            --success: #48bb78;
+            --warning: #f6ad55;
+            --text-primary: #e8eaf0;
+            --text-secondary: rgba(232, 234, 240, 0.55);
+            --text-muted: rgba(232, 234, 240, 0.3);
+            --font: 'Inter', sans-serif;
+            --step-active: #63b3ed;
+            --step-done: #48bb78;
+            --step-locked: rgba(255,255,255,0.15);
+        }
+        html, body, #root { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: var(--font); color: var(--text-primary); user-select: none; }
+        input, select, textarea, kbd { user-select: text; }
+        #map { width: 100%; height: 100%; background: #0a0c12; }
+        .leaflet-container { background: #0a0c12; }
+
+        /* ============ SIDEBAR ============ */
+        .sidebar {
+            position: absolute; top: 0; left: 0; width: 320px; height: 100%;
+            background: var(--surface-1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            z-index: 1000;
+            box-shadow: 4px 0 40px rgba(0,0,0,0.6);
+        }
+
+        /* ============ BRAND HEADER ============ */
+        .brand {
+            padding: 20px 20px 0;
+            flex-shrink: 0;
+        }
+        .brand-logo {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 18px;
+        }
+        .brand-icon {
+            width: 32px; height: 32px; background: linear-gradient(135deg, #63b3ed, #4299e1);
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0;
+            box-shadow: 0 0 20px rgba(99,179,237,0.3);
+        }
+        .brand-name { font-size: 0.95rem; font-weight: 700; letter-spacing: 0.05em; color: var(--text-primary); }
+        .brand-sub { font-size: 0.7rem; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+        /* ============ PROGRESS STEPS ============ */
+        .steps-track {
+            display: flex; align-items: center; padding: 0 20px 16px; gap: 0;
+            flex-shrink: 0;
+        }
+        .step-node {
+            display: flex; flex-direction: column; align-items: center; position: relative;
+        }
+        .step-bubble {
+            width: 28px; height: 28px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; font-weight: 700;
+            transition: all 0.3s ease;
+            position: relative; z-index: 1;
+            border: 2px solid transparent;
+        }
+        .step-bubble.locked { background: rgba(255,255,255,0.05); color: var(--text-muted); border-color: var(--border); }
+        .step-bubble.active { background: var(--accent-glow); color: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px rgba(99,179,237,0.4); }
+        .step-bubble.done { background: rgba(72,187,120,0.15); color: var(--success); border-color: var(--success); }
+        .step-label { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.04em; white-space: nowrap; position: absolute; top: 34px; left: 50%; transform: translateX(-50%); }
+        .step-label.locked { color: var(--text-muted); }
+        .step-label.active { color: var(--accent); }
+        .step-label.done { color: var(--success); }
+        .step-connector { height: 2px; flex: 1; margin: 0 4px; transition: all 0.3s; }
+        .step-connector.done { background: var(--success); }
+        .step-connector.pending { background: var(--border); }
+
+        /* ============ SCROLLABLE CONTENT ============ */
+        .sidebar-content {
+            flex: 1; overflow-y: auto; padding: 0 20px 20px;
+            scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+        }
+        .sidebar-content::-webkit-scrollbar { width: 4px; }
+        .sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+        /* ============ PHASE CARD ============ */
+        .phase-card {
+            border-radius: 10px; border: 1px solid var(--border);
+            overflow: hidden; margin-bottom: 10px;
+            transition: border-color 0.3s;
+        }
+        .phase-card.active-phase { border-color: rgba(99,179,237,0.3); }
+        .phase-card.done-phase { border-color: rgba(72,187,120,0.25); }
+
+        .phase-header {
+            padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+            background: var(--surface-2); cursor: pointer; user-select: none;
+        }
+        .phase-header:hover { background: var(--surface-3); }
+        .phase-num {
+            width: 20px; height: 20px; border-radius: 50%; font-size: 0.65rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .phase-num.locked { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+        .phase-num.active { background: var(--accent-glow); color: var(--accent); }
+        .phase-num.done { background: rgba(72,187,120,0.15); color: var(--success); }
+        .phase-title { font-size: 0.82rem; font-weight: 600; flex: 1; }
+        .phase-title.locked { color: var(--text-muted); }
+        .phase-title.active { color: var(--text-primary); }
+        .phase-title.done { color: var(--success); }
+        .phase-caret { font-size: 0.7rem; color: var(--text-muted); transition: transform 0.2s; }
+        .phase-caret.open { transform: rotate(180deg); }
+
+        .phase-body { padding: 14px; background: rgba(8,9,13,0.5); }
+
+        /* ============ FORM ITEMS ============ */
+        .field-label { font-size: 0.72rem; color: var(--text-secondary); font-weight: 500; margin-bottom: 5px; letter-spacing: 0.03em; text-transform: uppercase; }
+        .field-row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .field-row .field { flex: 1; }
+        .field { margin-bottom: 10px; }
+
+        input[type="text"], input[type="number"], input[type="date"] {
+            width: 100%; padding: 8px 10px; background: var(--surface-3);
+            border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text-primary); font-family: var(--font); font-size: 0.82rem;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+        input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus {
+            border-color: var(--accent-dim);
+        }
+        input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; }
+
+        .upload-zone {
+            border: 1.5px dashed var(--border); border-radius: 8px;
+            padding: 14px; text-align: center; cursor: pointer;
+            background: rgba(255,255,255,0.02); transition: all 0.2s;
+            margin-bottom: 8px; position: relative;
+        }
+        .upload-zone:hover { border-color: var(--accent-dim); background: var(--accent-glow); }
+        .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .upload-zone-icon { font-size: 1.2rem; margin-bottom: 4px; }
+        .upload-zone-text { font-size: 0.75rem; color: var(--text-secondary); }
+
+        .divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+        .divider-line { flex: 1; height: 1px; background: var(--border); }
+        .divider-text { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+
+        /* ============ BUTTONS ============ */
+        .btn-primary {
+            width: 100%; padding: 11px; border-radius: 8px; border: none;
+            background: linear-gradient(135deg, #4299e1, #63b3ed);
+            color: white; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+            transition: all 0.2s; letter-spacing: 0.02em;
+            box-shadow: 0 4px 14px rgba(66,153,225,0.3);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(66,153,225,0.4); }
+        .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .btn-secondary {
+            width: 100%; padding: 11px; border-radius: 8px;
+            background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+            color: var(--text-secondary); font-weight: 500; font-size: 0.85rem; cursor: pointer;
+            transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+            margin-top: 8px;
+        }
+        .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+        .btn-secondary:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .btn-success {
+            width: 100%; padding: 11px; border-radius: 8px; border: none;
+            background: linear-gradient(135deg, #38a169, #48bb78);
+            color: white; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 14px rgba(72,187,120,0.3);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-success:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(72,187,120,0.4); }
+        .btn-success:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* ============ SPINNER ============ */
+        .spinner {
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ============ HELP HINT ============ */
+        .hint { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px; line-height: 1.5; }
+        .hint strong { color: var(--text-secondary); font-weight: 500; }
+
+        /* ============ CLUSTER GRID (COMPACT) ============ */
+        .cluster-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; max-height: 200px; overflow-y: auto; }
+        .cluster-badge {
+            display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px; cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 0.72rem; color: var(--text-secondary);
+        }
+        .cluster-badge:hover { background: rgba(255,255,255,0.12); border-color: var(--accent-dim); transform: translateY(-1px); }
+        .cluster-badge.hidden { opacity: 0.35; background: transparent; text-decoration: line-through; border-color: transparent; }
+        .badge-num { font-weight: 700; color: var(--accent); }
+        .badge-count { color: var(--text-muted); font-size: 0.65rem; }
+        .cluster-toggle-all { color: var(--accent); font-size: 0.75rem; cursor: pointer; padding: 0; }
+        .cluster-toggle-all:hover { text-decoration: underline; }
+
+        /* ============ CLASS BUTTONS ============ */
+        .class-grid { display: flex; flex-direction: column; gap: 6px; }
+        .class-item {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            border-radius: 8px; background: var(--surface-3); border: 1px solid var(--border);
+            cursor: pointer; transition: all 0.15s; color: var(--text-primary); font-size: 0.82rem;
+        }
+        .class-item:hover:not(:disabled) { background: rgba(255,255,255,0.07); transform: translateX(2px); }
+        .class-item:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+        .class-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+        .class-name { flex: 1; font-weight: 500; }
+        .class-shortcut {
+            font-size: 0.65rem; background: rgba(255,255,255,0.07); padding: 2px 5px;
+            border-radius: 4px; color: var(--text-muted); font-family: monospace;
+        }        /* ============ TOP BAR (LABELS) ============ */
+        .top-bar {
+            position: absolute; top: 16px; left: 386px; right: 16px;
+            height: 52px; background: var(--surface-1); backdrop-filter: blur(24px);
+            border-radius: 14px; border: 1px solid var(--border);
+            z-index: 1001; display: flex; align-items: center; padding: 0 16px;
+            gap: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+            pointer-events: auto;
+        }
+        .top-bar-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-right: 8px; }
+        .label-chip {
+            display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            border-radius: 10px; cursor: pointer; transition: all 0.2s;
+            font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);
+        }
+        .label-chip:hover { background: rgba(255,255,255,0.08); border-color: var(--border-active); color: var(--text-primary); }
+        .label-chip.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+        .label-chip-sq { width: 10px; height: 10px; border-radius: 3px; }
+        .label-chip-key { font-size: 0.65rem; opacity: 0.4; font-family: monospace; background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 3px; }
+
+        .btn-mini {
+            padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+            background: rgba(255,255,255,0.04); color: var(--text-muted); font-size: 0.65rem;
+            cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
+        }
+        .btn-mini:hover { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+
+        /* ============ SELECTION BADGE ============ */
+        .selection-badge {
+            display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+            border-radius: 20px; font-size: 0.78rem; font-weight: 600; margin-bottom: 10px;
+            background: rgba(99,179,237,0.12); border: 1px solid rgba(99,179,237,0.25);
+            color: var(--accent);
+        }
+        .selection-badge.empty { background: rgba(255,255,255,0.04); border-color: var(--border); color: var(--text-muted); }
+        .selection-clear { cursor: pointer; opacity: 0.6; font-size: 0.7rem; margin-left: 2px; }
+        .selection-clear:hover { opacity: 1; }
+
+        /* ============ STATS BAR ============ */
+        .stats-bar {
+            display: flex; gap: 8px; margin-bottom: 12px; margin-top: 2px;
+        }
+        .stat-chip {
+            flex: 1; padding: 6px 8px; border-radius: 6px;
+            background: var(--surface-3); border: 1px solid var(--border);
+            text-align: center;
+        }
+        .stat-value { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+        .stat-label { font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .perf-tag {
+            font-size: 0.65rem; color: var(--accent); opacity: 0.8; margin-top: 6px; font-weight: 600; text-align: right;
+        }
+        .imagery-info {
+            margin-top: 16px; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; border: 1px solid var(--border);
+        }
+        .imagery-info-title {
+            font-size: 0.6rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.05em; margin-bottom: 8px;
+        }
+        .imagery-info-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+        }
+        .info-item { text-align: center; }
+        .info-val { font-size: 0.75rem; font-weight: 600; color: var(--text-primary); }
+        .info-label { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; }
+
+        /* ============ SAVE SUCCESS ============ */
+        .save-success {
+            margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+            background: rgba(72,187,120,0.1); border: 1px solid rgba(72,187,120,0.25);
+            font-size: 0.75rem; color: var(--success); line-height: 1.6; word-break: break-all;
+        }
+        .save-success-title { font-weight: 600; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+
+        /* ============ STATUS PILL ============ */
+        .status-pill {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 4px 9px; border-radius: 20px; font-size: 0.68rem; font-weight: 600;
+            letter-spacing: 0.04em; text-transform: uppercase;
+        }
+        .status-pill.idle { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+        .status-pill.busy { background: rgba(99,179,237,0.12); color: var(--accent); }
+        .status-pill-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-pill.idle .status-pill-dot { background: var(--text-muted); }
+        .status-pill.busy .status-pill-dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* ============ SEPARATOR ============ */
+        .hr { height: 1px; background: var(--border); margin: 14px 0; }
+
+        /* ============ VISIBILITY TOGGLES ============ */
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; color: var(--text-secondary); }
+        .toggle-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+        /* ============ TOOLTIP ============ */
+        .kb-tip {
+            background: rgba(0,0,0,0.7); border: 1px solid var(--border); border-radius: 6px;
+            padding: 8px 10px; font-size: 0.72rem; color: var(--text-secondary); line-height: 1.7; margin-bottom: 10px;
+        }
+        .kb-tip kbd {
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 3px; padding: 1px 5px; font-size: 0.68rem; font-family: monospace;
+            color: var(--text-primary);
+        }
+
+        /* Leaflet overrides — only target layer switcher, not draw toolbar */
+        .leaflet-control-layers-toggle { background-color: var(--surface-1) !important; }
+        .leaflet-left .leaflet-control { margin-left: 336px; }
+        /* Draw toolbar — keep default white background for visibility */
+        .leaflet-draw-toolbar a { background-color: #fff !important; }
+        .leaflet-draw-section { background: #fff !important; border-radius: 4px; }
+        /* Zoom control */
+        .leaflet-control-zoom a { background: var(--surface-1) !important; color: var(--text-primary) !important; border-color: var(--border) !important; }
+        .leaflet-control-zoom a:hover { background: var(--surface-3) !important; }
+
+        /* Scrollbar */
+        * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+        *::-webkit-scrollbar { width: 4px; }
+        *::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#63b3ed;font-family:Inter,sans-serif;font-size:0.9rem;letter-spacing:0.05em;flex-direction:column;gap:14px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#63b3ed,#4299e1);display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 30px rgba(99,179,237,0.4);">🛰️</div>
+            Initializing Labeler…
+        </div>
+    </div>
+
+    <script>
+        window.onerror = function(msg, url, line) {
+            const root = document.getElementById('root');
+            if (root) root.innerHTML = '<div style="color:#fc8181;padding:40px;font-family:Inter,sans-serif;"><h2>Error</h2><p>' + msg + '</p><p style="opacity:0.5;font-size:0.8rem">Line: ' + line + '</p></div>';
+            return false;
+        };
+    </script>
+
+    <script type="text/babel" data-presets="env,react">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const STEPS = ['AOI', 'Imagery', 'Analyze & Label', 'Export'];
+
+        function App() {
+            const [status, setStatus]         = useState('ready');
+            const [aoiGeoJson, setAoiGeoJson] = useState(null);
+            const [aoiName, setAoiName]       = useState(null);
+            const [currentStep, setCurrentStep] = useState(0);
+            const [openPhase, setOpenPhase]   = useState(0);
+
+            // Imagery Settings
+            const [startDate, setStartDate]   = useState('2025-06-01');
+            const [endDate, setEndDate]       = useState('2025-06-30');
+            const [maxCloudCover, setMaxCloudCover] = useState(20);
+            const [hasImagery, setHasImagery] = useState(false);
+
+            // Segment Settings
+            const [granularity, setGranularity] = useState(10);
+            const [clusters, setClusters]     = useState([]);
+            const [clusterCounts, setClusterCounts] = useState({});
+            const [hiddenClusters, setHiddenClusters] = useState(new Set());
+            const hiddenClustersRef = useRef(new Set());
+            useEffect(() => { hiddenClustersRef.current = hiddenClusters; }, [hiddenClusters]);
+
+            const [hasPolygons, setHasPolygons] = useState(false);
+            const [useMulti, setUseMulti]         = useState(true);
+
+            // Labeling
+            const [labelClasses, setLabelClasses] = useState([
+                { id: 1, name: 'Tree',      color: '#2f855a', emoji: '🌳' },
+                { id: 2, name: 'Grassland', color: '#ecc94b', emoji: '🌾' },
+                { id: 3, name: 'Urban',     color: '#e53e3e', emoji: '🏗️' }
+            ]);
+            const [selectedIds, setSelectedIds]   = useState(new Set());
+            const [polygonLabels, setPolygonLabels] = useState({});
+            const [showPolygons, setShowPolygons] = useState(true);
+            const [showLabelsOnly, setShowLabelsOnly] = useState(false);
+
+            // Export settings
+            const [projectName, setProjectName] = useState('geotag_project');
+            const [savePath, setSavePath]     = useState(null);
+            const [saveCount, setSaveCount]   = useState(0);
+            const [geoJsonData, setGeoJsonData] = useState(null);
+
+            // Tech stats
+            const [durations, setDurations] = useState({ stream: 0, segment: 0 });
+            const [metadata, setMetadata]   = useState(null);
+
+            const mapRef          = useRef(null);
+            const layerControlRef = useRef(null);
+            const geoJsonLayerRef = useRef(null);
+            const s2LayerRef      = useRef(null);
+
+            // ====== Label Assignment ======
+            const assignLabel = useCallback((cls) => {
+                if (selectedIds.size === 0 || !geoJsonData) return;
+                setPolygonLabels(prev => {
+                    const next = { ...prev };
+                    selectedIds.forEach(id => {
+                        const feature = geoJsonData.features.find(f => f.properties.polygon_id === id);
+                        const areaSqm = feature ? (feature.properties.area_sqm || 0) : 0;
+                        next[id] = { class_id: cls.id, name: cls.name, color: cls.color, area_sqm: areaSqm };
+                    });
+                    return next;
+                });
+                setSelectedIds(new Set()); // Auto-clear selection after labeling
+                if (currentStep < 3) setCurrentStep(3);
+            }, [selectedIds, currentStep, geoJsonData]);
+
+            // Keyboard Shortcuts: 1-9
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    // Don't trigger if typing in an input
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                    
+                    const keyNum = parseInt(e.key);
+                    if (!isNaN(keyNum) && keyNum >= 1 && keyNum <= labelClasses.length) {
+                        const cls = labelClasses[keyNum - 1];
+                        assignLabel(cls);
+                    }
+                    if (e.key === 'Escape') setSelectedIds(new Set());
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [labelClasses, assignLabel]);
+
+            useEffect(() => {
+                if (geoJsonLayerRef.current) {
+                    geoJsonLayerRef.current.setStyle(getPolygonStyle);
+                }
+            }, [selectedIds, hiddenClusters, showPolygons, polygonLabels, getPolygonStyle]);
+
+            // ====== Map init ======
+            useEffect(() => {
+                // Override Leaflet Draw area units to show sqkm instead of ha
+                if (L.GeometryUtil) {
+                    L.GeometryUtil.readableArea = function (area, isMetric) {
+                        if (isMetric) {
+                            // 1 sqkm = 1,000,000 sqm
+                            return (area / 1000000).toFixed(4) + ' sqkm';
+                        }
+                        return (area * 0.000247105).toFixed(2) + ' acres';
+                    };
+                }
+
+                mapRef.current = L.map('map', { zoomControl: false, boxZoom: false }).setView([48.13, 11.57], 13);
+                L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
+
+                const googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                    maxZoom: 20, subdomains: ['mt0','mt1','mt2','mt3']
+                }).addTo(mapRef.current);
+                const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' });
+
+                layerControlRef.current = L.control.layers(
+                    { 'Google Satellite': googleSat, 'OpenStreetMap': osm },
+                    {}, { position: 'bottomright' }
+                ).addTo(mapRef.current);
+
+                const drawnItems = new L.FeatureGroup();
+                mapRef.current.addLayer(drawnItems);
+
+                const drawControl = new L.Control.Draw({
+                    edit: { featureGroup: drawnItems },
+                    draw: {
+                        polygon:     { shapeOptions: { color: '#ffffff', weight: 1, fillOpacity: 0 } },
+                        rectangle:   { shapeOptions: { color: '#ffffff', weight: 1, fillOpacity: 0 } },
+                        circle: false, marker: false, polyline: false, circlemarker: false
+                    }
+                });
+                mapRef.current.addControl(drawControl);
+
+                mapRef.current.on(L.Draw.Event.CREATED, (event) => {
+                    drawnItems.clearLayers();
+                    drawnItems.addLayer(event.layer);
+                    const geojson = event.layer.toGeoJSON();
+                    setAoiGeoJson({ type: 'FeatureCollection', features: [geojson] });
+                    setAoiName('Drawn Area');
+                    setCurrentStep(s => Math.max(s, 1));
+                    setOpenPhase(1);
+                });
+
+                // Global Box Selection tool (managed separately to avoid stale closures in runSegmentation)
+                const onMouseDown = (e) => {
+                    if (!e.originalEvent.shiftKey) return;
+                    mapRef.current.dragging.disable();
+                    e.originalEvent.preventDefault();
+                    startPtRef.current = e.latlng;
+                    selBoxRef.current = L.rectangle(L.latLngBounds(startPtRef.current, startPtRef.current), {
+                        color: '#63b3ed', weight: 1.5, fillOpacity: 0.12, dashArray: '6, 4'
+                    }).addTo(mapRef.current);
+                };
+                const onMouseMove = (e) => {
+                    if (!startPtRef.current) return;
+                    selBoxRef.current.setBounds(L.latLngBounds(startPtRef.current, e.latlng));
+                };
+                const onMouseUp = (e) => {
+                    if (!startPtRef.current) return;
+                    const bounds = L.latLngBounds(startPtRef.current, e.latlng);
+                    const hits = [];
+                    const layer = geoJsonLayerRef.current;
+                    if (layer) {
+                        layer.eachLayer(pl => { 
+                            if (bounds.intersects(pl.getBounds())) {
+                                const oc = pl.feature.properties.object_class;
+                                if (!hiddenClustersRef.current.has(oc)) {
+                                    hits.push(pl.feature.properties.polygon_id);
+                                }
+                            }
+                        });
+                    }
+                    setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        hits.forEach(id => next.add(id));
+                        return next;
+                    });
+                    mapRef.current.removeLayer(selBoxRef.current);
+                    startPtRef.current = null; selBoxRef.current = null;
+                    mapRef.current.dragging.enable();
+                };
+
+                mapRef.current.on('mousedown', onMouseDown);
+                mapRef.current.on('mousemove', onMouseMove);
+                mapRef.current.on('mouseup', onMouseUp);
+
+                return () => {
+                    if (mapRef.current) {
+                        mapRef.current.off('mousedown', onMouseDown);
+                        mapRef.current.off('mousemove', onMouseMove);
+                        mapRef.current.off('mouseup', onMouseUp);
+                    }
+                };
+            }, []);
+
+            const startPtRef = useRef(null);
+            const selBoxRef = useRef(null);
+
+
+
+            // ====== Polygon styling ======
+            const getPolygonStyle = useCallback((feature) => {
+                if (!showPolygons) return { opacity: 0, fillOpacity: 0, weight: 0, interactive: false };
+                
+                const pId = feature.properties.polygon_id;
+                
+                if (showLabelsOnly) {
+                    if (polygonLabels[pId]) {
+                        const c = polygonLabels[pId].color;
+                        return { color: c, weight: 2, fillOpacity: 0.2, fillColor: c, opacity: 1 };
+                    }
+                    if (selectedIds.size > 0 && selectedIds.has(pId)) {
+                        return { color: '#00ffff', weight: 4, fillOpacity: 0.1, fillColor: '#00ffff', opacity: 1 };
+                    }
+                    return { opacity: 0, fillOpacity: 0, weight: 0, interactive: false };
+                }
+
+                const objClass = feature.properties.object_class;
+                if (hiddenClusters.has(objClass)) return { opacity: 0, fillOpacity: 0, weight: 0, interactive: false };
+                
+                // Outline-only approach for better visibility of underlying imagery
+                if (selectedIds.size > 0 && selectedIds.has(pId)) {
+                    return { color: '#00ffff', weight: 4, fillOpacity: 0.1, fillColor: '#00ffff', opacity: 1 };
+                }
+                if (polygonLabels[pId]) {
+                    const c = polygonLabels[pId].color;
+                    return { color: c, weight: 2, fillOpacity: 0.2, fillColor: c, opacity: 1 };
+                }
+                return { color: '#ffffff', weight: 0.8, fillOpacity: 0, opacity: 0.8 };
+            }, [showPolygons, showLabelsOnly, hiddenClusters, selectedIds, polygonLabels]);
+
+            useEffect(() => {
+                if (geoJsonLayerRef.current) geoJsonLayerRef.current.setStyle(getPolygonStyle);
+            }, [getPolygonStyle]);
+
+            // ====== AOI file upload ======
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        setAoiGeoJson(JSON.parse(ev.target.result));
+                        setAoiName(file.name);
+                        setCurrentStep(s => Math.max(s, 1));
+                        setOpenPhase(1);
+                    } catch { alert('Invalid GeoJSON file'); }
+                };
+                reader.readAsText(file);
+            };
+
+            // ====== Stream imagery ======
+            const runStreaming = async () => {
+                if (!aoiGeoJson) return alert('Please define an AOI first.');
+                setStatus('streaming');
+                setSavePath(null);
+                try {
+                    const res = await fetch('http://localhost:8000/api/stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ aoi_geojson: aoiGeoJson, start_date: startDate, end_date: endDate, max_cloud_cover: maxCloudCover })
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    const data = await res.json();
+                    if (data.rgb_image && data.rgb_bounds) {
+                        if (s2LayerRef.current) {
+                            layerControlRef.current.removeLayer(s2LayerRef.current);
+                            mapRef.current.removeLayer(s2LayerRef.current);
+                        }
+                        s2LayerRef.current = L.imageOverlay(data.rgb_image, data.rgb_bounds).addTo(mapRef.current);
+                        layerControlRef.current.addBaseLayer(s2LayerRef.current, 'Sentinel-2 Streamed');
+                        s2LayerRef.current.bringToBack();
+                        mapRef.current.fitBounds(data.rgb_bounds);
+                        setHasImagery(true);
+                        setMetadata(data.metadata);
+                        setDurations(prev => ({ ...prev, stream: data.duration_sec }));
+                        setCurrentStep(s => Math.max(s, 2));
+                        setOpenPhase(2);
+                    }
+                    setStatus('ready');
+                } catch (err) {
+                    alert('Streaming failed: ' + err.message);
+                    setStatus('ready');
+                }
+            };
+
+            // ====== Polygonize ======
+            const runSegmentation = async () => {
+                setStatus('segmenting');
+                setSavePath(null);
+                setPolygonLabels({});
+                setSelectedIds(new Set());
+                setHiddenClusters(new Set());
+                setHasPolygons(false);
+                try {
+                    const res = await fetch('http://localhost:8000/api/segment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            granularity: granularity,
+                            use_multi: useMulti,
+                            use_downsampling: false
+                        })
+                    });
+                    if (!res.ok) throw new Error('Segmentation failed');
+                    const data = await res.json();
+                    setDurations(prev => ({ ...prev, segment: data.duration_sec }));
+                    setGeoJsonData(data.geojson);
+
+                    if (geoJsonLayerRef.current) mapRef.current.removeLayer(geoJsonLayerRef.current);
+
+                    const layer = L.geoJSON(data.geojson, {
+                        style: getPolygonStyle,
+                        onEachFeature: (feature, layer) => {
+                            layer.on('click', () => {
+                                const pId = feature.properties.polygon_id;
+                                setSelectedIds(prev => {
+                                    const next = new Set(prev);
+                                    next.has(pId) ? next.delete(pId) : next.add(pId);
+                                    return next;
+                                });
+                            });
+                        }
+                    }).addTo(mapRef.current);
+
+                    geoJsonLayerRef.current = layer;
+                    setHasPolygons(true);
+
+                    const unique = new Set();
+                    const counts = {};
+                    data.geojson.features.forEach(f => {
+                        const oc = f.properties.object_class;
+                        unique.add(oc);
+                        counts[oc] = (counts[oc] || 0) + 1;
+                    });
+                    setClusters(Array.from(unique).sort((a,b) => a - b));
+                    setClusterCounts(counts);
+
+                    setClusterCounts(counts);
+
+                    // Move directly to enabling export as labeling can happen within this step
+                    setCurrentStep(s => Math.max(s, 3));
+                    setStatus('ready');
+                } catch (err) {
+                    alert('Polygonization failed. Did you stream imagery? ' + err.message);
+                    setStatus('ready');
+                }
+            };
+
+            // ====== Assign class ======
+
+
+            // ====== Save ======
+            const saveLabels = async () => {
+                const count = Object.keys(polygonLabels).length;
+                if (count === 0) return;
+                setStatus('saving');
+                try {
+                    const res = await fetch('http://localhost:8000/api/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            polygon_labels: polygonLabels, 
+                            project_name: projectName
+                        })
+                    });
+                    const data = await res.json();
+                    setSavePath(data.path);
+                    setSaveCount(data.assigned_polygons);
+                    setCurrentStep(4);
+                    setStatus('ready');
+                } catch {
+                    alert('Save failed.');
+                    setStatus('ready');
+                }
+            };
+
+            const isBusy   = status !== 'ready';
+            const labeled  = Object.keys(polygonLabels).length;
+
+            // Phase open toggler
+            const togglePhase = (i) => setOpenPhase(p => p === i ? -1 : i);
+
+            // Step computed state
+            const stepState = (i) => {
+                if (currentStep > i) return 'done';
+                if (currentStep === i) return 'active';
+                return 'locked';
+            };
+
+            return (
+                <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                    <div id="map" />
+
+                    {/* TOP BAR: CLASSIFICATION */}
+                    <div className="top-bar">
+                        <div className="top-bar-label">Assign Label:</div>
+                        {labelClasses.map((cls, idx) => (
+                            <div key={cls.id} className="label-chip" onClick={() => assignLabel(cls)}>
+                                <div className="label-chip-sq" style={{ background: cls.color }} />
+                                <span>{cls.emoji} {cls.name}</span>
+                                <span className="label-chip-key">{idx + 1}</span>
+                            </div>
+                        ))}
+                        <div style={{ flex: 1 }} />
+                        <button className="btn-mini" onClick={() => {
+                            const n = prompt("New class name:");
+                            if (n) setLabelClasses([...labelClasses, { id: Date.now(), name: n, color: '#' + Math.floor(Math.random()*16777215).toString(16), emoji: '🏷️' }]);
+                        }}>+ Customize</button>
+                    </div>
+
+                    <div className="sidebar">
+                        {/* Brand */}
+                        <div className="brand">
+                            <div className="brand-logo">
+                                <div className="brand-icon">🛰️</div>
+                                <div>
+                                    <div className="brand-name">GEOTAG</div>
+                                    <div className="brand-sub">Geospatial Labeler</div>
+                                </div>
+                                <div style={{marginLeft:'auto'}}>
+                                    <div className={`status-pill ${isBusy ? 'busy' : 'idle'}`}>
+                                        <div className="status-pill-dot"/>
+                                        {isBusy ? status : 'Ready'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Step Track */}
+                            <div className="steps-track">
+                                {STEPS.map((s, i) => (
+                                    <React.Fragment key={s}>
+                                        <div className="step-node">
+                                            <div className={`step-bubble ${stepState(i)}`}>
+                                                {stepState(i) === 'done' ? '✓' : i + 1}
+                                            </div>
+                                            <div className={`step-label ${stepState(i)}`}>{s}</div>
+                                        </div>
+                                        {i < STEPS.length - 1 && (
+                                            <div className={`step-connector ${currentStep > i ? 'done' : 'pending'}`}/>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Scrollable phases */}
+                        <div className="sidebar-content">
+                            <div style={{padding:'4px 20px 14px 20px'}}>
+                                <div className="field">
+                                    <div className="field-label" style={{color:'var(--accent)', textTransform:'uppercase', letterSpacing:'0.05em', fontSize:'0.6rem'}}>Active Project Name</div>
+                                    <input type="text" value={projectName} 
+                                        onChange={e => setProjectName(e.target.value.replace(/[^a-z0-9_]/gi, '_'))}
+                                        placeholder="Enter project name..."
+                                        style={{fontSize:'1.05rem', fontWeight:600}}
+                                    />
+                                    <div className="hint" style={{marginTop:4, opacity:0.6, fontSize:'0.65rem'}}>Target: <code>exports/{projectName}/labels/</code></div>
+                                </div>
+                            </div>
+
+
+                            {/* ─── PHASE 1: AOI ───────────────────── */}
+                            <PhaseCard
+                                num={1} title="Define Area of Interest"
+                                state={stepState(0)} open={openPhase === 0}
+                                onToggle={() => togglePhase(0)}
+                            >
+                                <div className="upload-zone">
+                                    <input type="file" accept=".geojson" onChange={handleFileUpload} />
+                                    <div className="upload-zone-icon">📂</div>
+                                    <div className="upload-zone-text">
+                                        {aoiName ? <span style={{color:'var(--accent)'}}>{aoiName}</span> : 'Upload GeoJSON file'}
+                                    </div>
+                                </div>
+                                <div className="divider">
+                                    <div className="divider-line"/><span className="divider-text">or draw on map</span><div className="divider-line"/>
+                                </div>
+                                <div className="hint">Use the <strong>rectangle or polygon tools</strong> (top-left of map) to draw your AOI. The outline will be displayed with zero fill so imagery stays visible.</div>
+                                {aoiGeoJson && (
+                                    <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,fontSize:'0.75rem',color:'var(--success)'}}>
+                                        ✓ &nbsp;AOI defined 
+                                        {metadata && <span style={{color:'var(--text-muted)',marginLeft:4}}>({metadata.area_sqkm} sqkm)</span>}
+                                    </div>
+                                )}
+                            </PhaseCard>
+
+                            {/* ─── PHASE 2: IMAGERY ───────────────── */}
+                            <PhaseCard
+                                num={2} title="Stream Sentinel-2 Imagery"
+                                state={stepState(1)} open={openPhase === 1}
+                                onToggle={() => togglePhase(1)}
+                            >
+                                <div className="field-row">
+                                    <div className="field">
+                                        <div className="field-label">Start Date</div>
+                                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                    </div>
+                                    <div className="field">
+                                        <div className="field-label">End Date</div>
+                                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="field">
+                                    <div className="field-label">Max Cloud Cover (%)</div>
+                                    <input type="range" min="0" max="100" value={maxCloudCover}
+                                        onChange={e => setMaxCloudCover(+e.target.value)}
+                                        style={{width:'100%',accentColor:'var(--accent)'}}
+                                    />
+                                    <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.7rem',color:'var(--text-muted)',marginTop:2}}>
+                                        <span>0% (crystal clear)</span>
+                                        <span style={{color:'var(--accent)',fontWeight:600}}>{maxCloudCover}%</span>
+                                        <span>100%</span>
+                                    </div>
+                                </div>
+                                <div className="hint">Fetches the earliest best-quality scene in the date range. Smaller AOIs stream faster and at higher effective detail.</div>
+                                <button className="btn-primary" onClick={runStreaming} disabled={isBusy || !aoiGeoJson}>
+                                    {status === 'streaming' ? <><div className="spinner"/>Searching &amp; Streaming…</> : '🛰️  Stream Imagery'}
+                                </button>
+                                {durations.stream > 0 && <div className="perf-tag">Streamed in {durations.stream}s</div>}
+
+                                {metadata && (
+                                    <div className="imagery-info">
+                                        <div className="imagery-info-title">PRIMARY SCENE INFO</div>
+                                        <div className="imagery-info-grid">
+                                            <div className="info-item">
+                                                <div className="info-val">{metadata.date.split('T')[0]}</div>
+                                                <div className="info-label">Capture Date</div>
+                                            </div>
+                                            <div className="info-item">
+                                                <div className="info-val">{metadata.cloud_cover}%</div>
+                                                <div className="info-label">Cloud Cover</div>
+                                            </div>
+                                            <div className="info-item">
+                                                <div className="info-val">{metadata.area_sqkm}</div>
+                                                <div className="info-label">Area (sqkm)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </PhaseCard>
+
+                            {/* ─── PHASE 3: ANALYZE & LABEL ────────────── */}
+                            <PhaseCard
+                                num={3} title="Segmentation & Labeling"
+                                state={stepState(2)} open={openPhase === 2}
+                                onToggle={() => togglePhase(2)}
+                            >
+                                {!hasImagery && <div className="hint" style={{color:'var(--warning)'}}>⚠️ Stream imagery first to enable this step.</div>}
+                                <div className="field">
+                                    <div className="field-label">Target Segments — {granularity} clusters</div>
+                                    <input type="range" min={4} max={80} value={granularity}
+                                        onChange={e => setGranularity(+e.target.value)}
+                                        style={{width:'100%',accentColor:'var(--accent)'}}
+                                    />
+                                    <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.7rem',color:'var(--text-muted)',marginTop:2}}>
+                                        <span>Coarse</span><span>Fine</span>
+                                    </div>
+                                </div>
+                                {clusters.length > 0 && (
+                                    <>
+                                <div className="hr"/>
+                                <div style={{display:'flex', gap:20, marginBottom:12, alignItems:'center', background:'var(--surface-3)', padding:'8px 12px', borderRadius:8}}>
+                                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:'0.75rem', cursor:'pointer', color: showLabelsOnly ? 'var(--accent)' : 'inherit'}}>
+                                        <input type="checkbox" style={{accentColor: 'var(--accent)', width: 14, height: 14}} checked={showLabelsOnly} onChange={() => setShowLabelsOnly(v => !v)}/> Show Labels Only
+                                    </label>
+                                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:'0.75rem', cursor:'pointer'}}>
+                                        <input type="checkbox" style={{accentColor: 'var(--accent)', width: 14, height: 14}} checked={showPolygons} onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            setShowPolygons(isChecked);
+                                            if (isChecked) {
+                                                setHiddenClusters(new Set());
+                                            } else {
+                                                setHiddenClusters(new Set(clusters));
+                                            }
+                                        }}/> {showPolygons ? 'Hide Polygons' : 'Show Polygons'}
+                                    </label>
+                                </div>
+                                        <div className="cluster-grid">
+                                            {clusters.map(k => (
+                                                <div key={k} 
+                                                     className={`cluster-badge ${hiddenClusters.has(k) ? 'hidden' : ''}`}
+                                                     onClick={() => setHiddenClusters(prev => {
+                                                        const next = new Set(prev);
+                                                        next.has(k) ? next.delete(k) : next.add(k);
+                                                        return next;
+                                                     })}
+                                                     title={`Toggle visibility of Class ${k}`}>
+                                                    <span className="badge-num">{k}</span>
+                                                    <span className="badge-count">({clusterCounts[k] || 0})</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                                <button className="btn-primary" style={{marginTop:10}} onClick={runSegmentation} disabled={isBusy || !hasImagery}>
+                                    {status === 'segmenting' ? <><div className="spinner"/>Analyzing Pixels…</> : '🔷  Generate Polygons'}
+                                </button>
+                                {durations.segment > 0 && <div className="perf-tag">Clustered in {durations.segment}s</div>}
+                                {hasPolygons && <button className="btn-secondary" style={{marginTop:6}} onClick={runSegmentation} disabled={isBusy}>↺ Apply new granularity</button>}
+                                
+                                {/* Labeling UI directly below Segmentation when polygons exist */}
+                                {hasPolygons && (
+                                    <div style={{marginTop: 20}}>
+                                        <div className="hr"/>
+                                        <div className="kb-tip">
+                                            <strong>Click</strong> to select.&nbsp;&nbsp;
+                                            <kbd>Shift</kbd>+<strong>Drag</strong> for box-select.&nbsp;&nbsp;
+                                            Keys <kbd>1</kbd>–<kbd>{labelClasses.length}</kbd> to tag.
+                                        </div>
+
+                                        <div className={`selection-badge ${selectedIds.size === 0 ? 'empty' : ''}`} style={{marginBottom:12}}>
+                                            {selectedIds.size === 0
+                                                ? '— No polygons selected'
+                                                : <div style={{display:'flex', alignItems:'center', width:'100%'}}>
+                                                    <span style={{flex:1}}>{selectedIds.size} feature{selectedIds.size > 1 ? 's' : ''} selected
+                                                        {selectedIds.size === 1 && geoJsonData && (
+                                                            <span style={{color:'var(--accent)',marginLeft:5,opacity:0.8}}>
+                                                                (OC {geoJsonData.features.find(f => f.properties.polygon_id === Array.from(selectedIds)[0])?.properties.object_class})
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <div style={{display:'flex', gap:8}}>
+                                                        <span className="selection-clear" 
+                                                              onClick={() => {
+                                                                  if (!geoJsonData) return;
+                                                                  const targetOcs = new Set(geoJsonData.features.filter(f => selectedIds.has(f.properties.polygon_id)).map(f => f.properties.object_class));
+                                                                  setHiddenClusters(new Set(clusters.filter(c => !targetOcs.has(c))));
+                                                              }} 
+                                                              style={{fontSize:'0.65rem', padding:'2px 6px', opacity:0.7, background: 'rgba(255,255,255,0.05)', borderRadius:4}}
+                                                              title="Hide all other classes">Isolate</span>
+                                                        <span className="selection-clear" onClick={() => setSelectedIds(new Set())}>✕</span>
+                                                    </div>
+                                                  </div>
+                                            }
+                                        </div>
+
+                                        <div className="hint" style={{textTransform:'uppercase',fontSize:'0.65rem',fontWeight:700,letterSpacing:'0.05em',marginBottom:6}}>Class Coverage (Reporting)</div>
+                                        <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                                            {labelClasses.map(cls => {
+                                                const tagged = Object.values(polygonLabels).filter(p => p.class_id === cls.id);
+                                                const count = tagged.length;
+                                                const totalAreaSqm = tagged.reduce((sum, p) => sum + (p.area_sqm || 0), 0);
+                                                const totalAreaSqkm = (totalAreaSqm / 1000000).toFixed(4);
+                                                const totalSceneSqkm = metadata ? metadata.area_sqkm : Math.max(0.0001, totalAreaSqkm); 
+                                                const pct = totalSceneSqkm > 0 ? ((totalAreaSqkm / totalSceneSqkm) * 100).toFixed(1) : 0;
+                                                return (
+                                                    <div key={cls.id} style={{display:'flex',alignItems:'center',gap:10,fontSize:'0.78rem',padding:'4px 8px',background:'rgba(255,255,255,0.03)',borderRadius:6}}>
+                                                        <div style={{width:8,height:8,borderRadius:2,background:cls.color}}/>
+                                                        <span style={{flex:1}}>{cls.name}</span>
+                                                        <span style={{color:'var(--text-muted)'}}>{totalAreaSqkm} sqkm ({pct}%)</span>
+                                                        <span style={{color:'var(--text-muted)', fontSize:'0.7rem'}}>— {count} poly</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </PhaseCard>
+
+                            {/* ─── PHASE 4: EXPORT ────────────────── */}
+                            <PhaseCard
+                                num={4} title="Export & Finalize"
+                                state={stepState(3)} open={openPhase === 3}
+                                onToggle={() => togglePhase(3)}
+                            >
+                                <div className="hint" style={{marginBottom:10}}>
+                                    Export all labeled polygons to <strong>GeoPackage (.gpkg)</strong> format. Filenames are automatically timestamped.
+                                </div>
+                                <button className="btn-success" onClick={saveLabels} disabled={isBusy || labeled === 0}>
+                                    {status === 'saving' ? <><div className="spinner"/>Saving Data…</> : `💾  Export ${labeled} Polygons`}
+                                </button>
+                                {savePath && (
+                                    <div className="save-success" style={{marginTop:12}}>
+                                        <div className="save-success-title" style={{color:'var(--success)', fontWeight:700}}>✅ Export Complete</div>
+                                        <div style={{opacity:0.8, fontSize:'0.7rem', wordBreak:'break-all'}}>{saveCount} polygons → <code>{savePath}</code></div>
+                                    </div>
+                                )}
+                            </PhaseCard>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function PhaseCard({ num, title, state, open, onToggle, children }) {
+            return (
+                <div className={`phase-card ${state === 'active' ? 'active-phase' : state === 'done' ? 'done-phase' : ''}`}>
+                    <div className="phase-header" onClick={onToggle}>
+                        <div className={`phase-num ${state}`}>{state === 'done' ? '✓' : num}</div>
+                        <div className={`phase-title ${state}`} dangerouslySetInnerHTML={{__html: title}} />
+                        <div className={`phase-caret ${open ? 'open' : ''}`}>▲</div>
+                    </div>
+                    {open && <div className="phase-body">{children}</div>}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
