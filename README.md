@@ -253,6 +253,25 @@ The core innovation is the **vegetation-weighted Felzenszwalb → K-Means pipeli
 
 **Result**: 500-5,000 polygons per sq km, depending on granularity setting (1-50).
 
+### Why These Bands?
+
+We deliberately select a **4-band weighted stack** for Felzenszwalb segmentation—not all 10 Sentinel-2 bands. This is optimized for the critical tree vs grassland separation:
+
+| Band | Weight | Role | Why It Matters |
+|------|--------|------|----------------|
+| **NDVI** | ×2.0 | Primary boundary driver | (NIR - Red) / (NIR + Red). Trees have high NDVI (~0.6-0.9); grassland is moderate (~0.3-0.5). The 2× weight forces Felzenszwalb to respect vegetation boundaries above all else. |
+| **RedEdge1 (B05)** | ×1.0 | Plant health discriminator | 704nm wavelength catches the "red edge inflection point"—healthy trees show sharp chlorophyll absorption; stressed/dry grassland appears flat. Separates healthy forest from dry pasture. |
+| **NIR (B08)** | ×1.0 | Biomass proxy | 842nm near-infrared reflects strongly from tree canopy structure (leaf volume + internal scattering). Grass has lower NIR reflectance due to simpler structure. |
+| **Blue (B02)** | ×1.0 | Urban shadow detector | 490nm blue light creates distinct shadow signatures from buildings and infrastructure. Helps separate urban from vegetation even when NDVI overlaps. |
+
+**Excluded bands and why:**
+- **SWIR (B11/B12)**: Sensitive to moisture but blurs vegetation edges—trees and wet grass have similar SWIR signatures
+- **Green (B03)**: Too correlated with NIR for boundary detection; redundant information
+- **RedEdge2/3 (B06/B07)**: Marginal improvement over B05 for superpixels; adds noise
+- **Coastal aerosol (B01)**: Mostly atmospheric scattering, minimal land cover signal
+
+**The tree vs grassland challenge**: Both are vegetation—NDVI alone can't separate them. The RedEdge1 band is the secret weapon: healthy trees show the classic "red edge" chlorophyll absorption feature at 704nm, while grassland (especially dry or sparse) has a flatter spectral curve. Combined with NIR canopy structure and NDVI's 2× weight, Felzenszwalb learns to put boundaries exactly where trees end and grass begins.
+
 ---
 
 ## 🛠️ Tech Stack & Design Decisions
